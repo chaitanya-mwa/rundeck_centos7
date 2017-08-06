@@ -1,0 +1,142 @@
+---
+- hosts: localhost
+  become: true
+  vars:
+    postgres_user: rundeck
+    postgres_password: rundeck
+    postgres_database: rundeck
+    public_hostname: 192.168.66.16
+
+  tasks:
+
+  - name: install packages
+    yum: 
+      name: "{{ item }}"
+      state: installed
+    with_items:
+      - java-1.8.0
+      - postgresql-server
+      - nginx
+      - http://repo.rundeck.org/latest.rpm
+      - rundeck
+      - libsemanage-python
+
+  - name: setup postgres
+    shell: >
+      postgresql-setup initdb
+    args:
+      creates: /var/lib/pgsql/data/postgresql.conf
+
+  - name: configure postgres authentication - comment out ident authentication
+    lineinfile:
+      dest: /var/lib/pgsql/data/pg_hba.conf
+      regexp: '{{ item.regexp }}'
+      line: '{{ item.regexp }}'
+      state: '{{ item.state }}'
+    with_items:
+      -  { state: 'absent',  regexp: 'host    all             all             127.0.0.1/32            ident' }
+      -  { state: 'absent',  regexp: 'host    all             all             ::1/128                 ident' }
+      -  { state: 'present', regexp: 'host    all             all             127.0.0.1/32            md5' }
+      -  { state: 'present', regexp: 'host    all             all             ::1/128                 md5' }
+
+  - name: set postgres to be enabled and start it
+    systemd:
+      name: postgresql
+      enabled: yes
+      state: started
+      daemon_reload: yes
+
+  - name: create rundeck role and database in postgres
+    shell: |
+      echo "create role rundeck with login password 'rundeck'" | psql
+      echo "create database rundeck with owner rundeck" | psql
+    become_user: postgres
+ 
+  - name: configure rundeck files
+    replace:
+      path: '{{ item.path }}'
+      regexp: '{{ item.regexp }}'
+      replace: '{{ item.replace }}'
+    with_items:
+      - { path: '/etc/rundeck/rundeck-config.properties', regexp: '^dataSource.dbCreate = update', replace: '#dataSource.dbCreate = update' }
+      - { path: '/etc/rundeck/rundeck-config.properties', regexp: '^dataSource.url = jdbc:h2:file:/var/lib/rundeck/data/rundeckdb;MVCC=true', replace: '#dataSource.url = jdbc:h2:file:/var/lib/rundeck/data/rundeckdb;MVCC=true' }
+      - { path: '/etc/rundeck/rundeck-config.properties', regexp: '^grails.serverURL=http://localhost:4440', replace: 'grails.serverURL=https://{{ public_hostname }}' }
+      - { path: '/etc/rundeck/framework.properties', regexp: 'framework.server.name = localhost', replace: 'framework.server.name = {{ public_hostname }}' }
+      - { path: '/etc/rundeck/framework.properties', regexp: 'framework.server.hostname = localhost', replace: 'framework.server.hostname = {{ public_hostname }}' }
+      - { path: '/etc/rundeck/profile', regexp: '.*server.http.port.*RDECK_HTTP_PORT"', replace: '           -Dserver.http.port=\$RDECK_HTTP_PORT \\' }
+
+  - name: add lines
+    lineinfile:
+      path: '{{ item.path }}'
+      line: '{{ item.line }}'
+      insertafter: '{{ item.insertafter }}'
+    with_items:
+      - { path: '/etc/rundeck/framework.properties', line: 'framework.rundeck.url = https://{{ public_hostname }}', insertafter: 'framework.server.url' }
+      - { path: '/etc/rundeck/profile', line: '           -Drundeck.jetty.connecter.forwarded=true"', insertafter: '-Drundeck.http.port' }
+
+  - name: add postgres jdbc config to rundeck-config.properties
+    lineinfile:
+      dest: /etc/rundeck/rundeck-config.properties
+      line: '{{ item }}'
+    with_items:
+      - 'dataSource.driverClassName = org.postgresql.Driver'
+      - 'dataSource.url = jdbc:postgresql://localhost:5432/rundeck'
+      - 'dataSource.username = rundeck'
+      - 'dataSource.password = rundeck'
+
+
+  - name: create self signed certificate for ssl
+    shell: >
+      openssl req -new -nodes -x509 -subj "/C=NL/ST=Noord Holland/L=Lutjebroek/CN={{ ansible_fqdn }}" -days 3650 -keyout /etc/nginx/server.key -out /etc/nginx/server.crt -extensions v3_ca
+    args:
+      creates: /etc/nginx/server.crt
+
+  - name: generate nginx ssl config
+    shell: |
+      echo "worker_processes  1;
+            events {
+              worker_connections  1024;
+            }
+            http {
+              include /etc/nginx/mime.types;
+              gzip  on;
+              gzip_http_version 1.1;
+              gzip_comp_level 2;
+              gzip_types text/plain text/css application/x-javascript text/xml application/xml application/xml+rss text/javascript;
+              server {
+                listen *:443;
+                ssl on;
+                server_name {{ ansible_fqdn }};
+                ssl_certificate /etc/nginx/server.crt;
+                ssl_certificate_key /etc/nginx/server.key;
+                location / {
+                  proxy_pass http://127.0.0.1:3000;
+                }
+              }
+            }" > /etc/nginx/nginx.conf
+
+  - name: restart nginx service
+    systemd:
+      name: nginx
+      enabled: yes
+      state: restarted
+
+  - name: set firewalld to be enabled at boot and start it
+    systemd:
+      name: firewalld
+      enabled: yes
+      state: started
+
+  - name: enable https port in the firewall
+    firewalld:
+      port: 443/tcp
+      state: enabled
+      permanent: yes
+      immediate: yes
+
+  - name: set seboolean httpd to allow network connections
+    seboolean:
+      name: httpd_can_network_connect
+      state: yes
+      persistent: yes
+
