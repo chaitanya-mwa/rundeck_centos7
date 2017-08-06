@@ -73,7 +73,7 @@
       insertafter: '{{ item.insertafter }}'
     with_items:
       - { path: '/etc/rundeck/framework.properties', line: 'framework.rundeck.url = https://{{ public_hostname }}', insertafter: 'framework.server.url' }
-      - { path: '/etc/rundeck/profile', line: '           -Drundeck.jetty.connecter.forwarded=true"', insertafter: '-Drundeck.http.port' }
+      - { path: '/etc/rundeck/profile', line: '           -Drundeck.jetty.connecter.forwarded=true"', insertafter: '-Dserver.http.port' }
 
   - name: add postgres jdbc config to rundeck-config.properties
     lineinfile:
