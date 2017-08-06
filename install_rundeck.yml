@@ -6,6 +6,7 @@
     postgres_password: rundeck
     postgres_database: rundeck
     public_hostname: 192.168.66.16
+    ansible_plugin: https://github.com/Batix/rundeck-ansible-plugin/releases/download/2.0.2/ansible-plugin-2.0.2.jar
 
   tasks:
 
@@ -84,6 +85,17 @@
       - 'dataSource.username = rundeck'
       - 'dataSource.password = rundeck'
 
+  - name: set rundeck to be enabled at boot and start it
+    systemd:
+      name: rundeckd
+      enabled: yes
+      state: started
+      daemon_reload: yes
+
+  - name: fetch rundeck ansible plugin and put it in /var/lib/rundeck/libext/
+    get_url:
+      url: '{{ ansible_plugin }}'
+      dest: /var/lib/rundeck/libext/
 
   - name: create self signed certificate for ssl
     shell: >
@@ -110,7 +122,7 @@
                 ssl_certificate /etc/nginx/server.crt;
                 ssl_certificate_key /etc/nginx/server.key;
                 location / {
-                  proxy_pass http://127.0.0.1:3000;
+                  proxy_pass http://127.0.0.1:4440;
                 }
               }
             }" > /etc/nginx/nginx.conf
