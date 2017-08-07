@@ -19,8 +19,12 @@
       - postgresql-server
       - nginx
       - http://repo.rundeck.org/latest.rpm
-      - rundeck
       - libsemanage-python
+
+  - name: install rundeck
+    yum:
+      name: rundeck
+      state: installed
 
   - name: setup postgres
     shell: >
