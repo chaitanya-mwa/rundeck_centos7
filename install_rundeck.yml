@@ -68,7 +68,7 @@
       - { path: '/etc/rundeck/rundeck-config.properties', regexp: '^grails.serverURL=http://localhost:4440', replace: 'grails.serverURL=https://{{ public_hostname }}' }
       - { path: '/etc/rundeck/framework.properties', regexp: 'framework.server.name = localhost', replace: 'framework.server.name = {{ public_hostname }}' }
       - { path: '/etc/rundeck/framework.properties', regexp: 'framework.server.hostname = localhost', replace: 'framework.server.hostname = {{ public_hostname }}' }
-      - { path: '/etc/rundeck/profile', regexp: '.*server.http.port.*RDECK_HTTP_PORT"', replace: '           -Dserver.http.port=\$RDECK_HTTP_PORT \\' }
+      - { path: '/etc/rundeck/profile', regexp: '.*server.http.port.*RDECK_HTTP_PORT"', replace: '           -Dserver.http.port=$RDECK_HTTP_PORT \\' }
 
   - name: add lines
     lineinfile:
@@ -100,6 +100,7 @@
     get_url:
       url: '{{ ansible_plugin }}'
       dest: /var/lib/rundeck/libext/
+    become_user: rundeck
 
   - name: create self signed certificate for ssl
     shell: >
