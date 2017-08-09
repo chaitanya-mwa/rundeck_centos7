@@ -7,6 +7,9 @@
     postgres_database: rundeck
     public_hostname: 192.168.66.16
     ansible_plugin: https://github.com/Batix/rundeck-ansible-plugin/releases/download/2.0.2/ansible-plugin-2.0.2.jar
+    certificate_country: NL
+    certificate_state: 'Noord Holland'
+    certificate_locality: Lutjebroek
 
   tasks:
 
@@ -104,7 +107,7 @@
 
   - name: create self signed certificate for ssl
     shell: >
-      openssl req -new -nodes -x509 -subj "/C=NL/ST=Noord Holland/L=Lutjebroek/CN={{ ansible_fqdn }}" -days 3650 -keyout /etc/nginx/server.key -out /etc/nginx/server.crt -extensions v3_ca
+      openssl req -new -nodes -x509 -subj "/C={{ certificate_country }}/ST={{ certificate_state }}/L={{ certificate_locality }}/CN={{ ansible_fqdn }}" -days 3650 -keyout /etc/nginx/server.key -out /etc/nginx/server.crt -extensions v3_ca
     args:
       creates: /etc/nginx/server.crt
 
